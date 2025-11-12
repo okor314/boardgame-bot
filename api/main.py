@@ -67,3 +67,34 @@ def get_prices(id: int):
 
     finally:
         conn.close()
+
+@app.get('/history/{id}')
+def get_history(id: int):
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""SELECT site.name, history.price, history.checkdate 
+                        FROM history
+                        JOIN site
+                        ON history.site_id = site.id
+                        WHERE history.game_id = %s
+                        ORDER BY history.checkdate;""", (id,))
+        
+        rows = cur.fetchall()
+        if not rows:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Не вдалося знайти гру")
+        
+        result = {}
+        for row in rows:
+            site_name = row['name']
+            price = row['price']
+            date = row['checkdate']
+
+            if result.get(site_name) is None:
+                result[site_name] = {date: price}
+            else:
+                result[site_name].update({date: price})
+                
+        return result
+    finally:
+        conn.close()
