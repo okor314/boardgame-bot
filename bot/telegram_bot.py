@@ -151,8 +151,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     reply_markup = ReplyKeyboardMarkup(commands_keyboard, one_time_keyboard=True, resize_keyboard=True)
     
     await update.message.reply_text(
-        "Привіт! Щоб розпочати пошук ігор, введіть назву бажаної гри "\
-        'або @shukachihorbot <назва гри> для пошуку з підказками.',
+        "Привіт! Щоб розпочати пошук ігор, надішліть мені назву бажаної гри.\n\n"\
+        'Або @shukachihorbot <назва гри> для пошуку з підказками.',
         reply_markup=reply_markup)
 
     return SEARCH
