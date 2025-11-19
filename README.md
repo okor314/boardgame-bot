@@ -4,7 +4,7 @@
 **boardgame-bot** is a Telegram bot that helps users quickly find the **cheapest available price** for any board game across multiple online stores.
 
 The bot connects to the **boardgame-aggregator** API and PostgreSQL database, where scraped data from supported e-commerce sites is stored.  
-Users can search by game title, browse results, and instantly get links to the best offer.
+Users can search by game title, browse results, and instantly get links to the best offer. You may try it yourself by following [@shukachihorbot](https://t.me/shukachihorbot)
 
 ---
 
