@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, status
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from config import config
+from api.config import config
 
 app = FastAPI()
 
