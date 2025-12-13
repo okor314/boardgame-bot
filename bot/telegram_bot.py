@@ -5,9 +5,7 @@ from dotenv import load_dotenv
 import aiohttp
 import asyncio
 
-import io
-import json
-from thefuzz import fuzz, process
+from thefuzz import process
 
 from telegram import (
     ReplyKeyboardMarkup, 
@@ -29,6 +27,8 @@ from telegram.ext import (
     filters,
 )
 
+from utils import match_buttons, find_matches, message_with_details, prices_plot
+
 load_dotenv(dotenv_path='./.env')
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID"))
@@ -36,7 +36,7 @@ API_BASE_URL = 'http://127.0.0.1:8000'
 
 SEARCH, REPORT = range(2)
 TITLES = []
-NUMBER_EMOJI = [f'{i}\uFE0F\u20E3' for i in range(11)]
+
 
 async def apiGET(endpoint: str) -> dict:
     url = API_BASE_URL + endpoint
@@ -60,87 +60,7 @@ logger = logging.getLogger(__name__)
 
 
 
-def match_buttons(matches: list[tuple[int, str]]) -> list:
-    """Helper to create buttons with all matched games."""
-    return [[InlineKeyboardButton(title, callback_data=str(id))] for id, title in matches]
 
-def find_matches(query: str, choises: list[tuple[int, str]]) -> list[tuple[int, str]]:
-    """Helper function to find games with title that contains
-    words given in query."""
-    words = query.lower().strip().split(' ')
-
-    matches = filter(lambda x: any(word in x[1].lower() for word in words), choises)
-    # Sorting by fuzz score of pair query-title
-    matches = sorted(matches, key=lambda x: fuzz.WRatio(query, x[1]), reverse=True)
-    return matches
-
-def message_with_details(details: dict) -> str:
-    """Helper function to create a massage about game details on each site."""
-    meassage = ''
-    sites = sorted(details.items(), key=lambda game: game[1].get('price'))
-    for i, site in enumerate(sites, start=1):
-        site_name = site[0]
-        game_info = site[1]
-        year, month, day = game_info['lastchecked'].split('-')
-
-        # Use bold text for site name if game is in stock and cross out text if it is not
-        name_tag = 'b' if game_info['in_stock'] in ['В наявності', 'Очікується'] else 's'
-        meassage += (
-            f'{NUMBER_EMOJI[i]} <{name_tag}>{site_name}</{name_tag}>\n'
-            f'Ціна: <u>{int(game_info['price'])} грн.</u>\n'
-            f'Статус: {game_info['in_stock']}\n'
-            f'Назва: <a href=\"{game_info['url']}\">{game_info['title']}</a>\n'
-            f'Остання перевірка: {day}.{month}\n\n'
-        )
-
-    meassage += ('Якщо ви помітили якусь помилку або неточність, '
-                'можете повідомити про неї за допомогою команди /report')
-    return meassage
-
-async def prices_plot(history_details: dict):
-    """Helper function to create   """
-    datasets = [
-        {
-            "label": site_name,
-            "fill": False,
-            "data": [{"x": date, "y": price} for date, price in data.items()]
-        }
-        for site_name, data in history_details.items()
-    ]
-
-    request_params = {
-        "type": "line",
-        "data": {
-            "datasets": datasets
-        },
-        "options": {
-            "title": {
-                "display": True,
-                "text": "Історія цін"
-            },
-            "scales": {
-            "xAxes": [{
-                "type": "time",
-                "ticks": {
-                    "source": "data"
-                },
-                "time": {
-                "parser": "YYYY-MM-DD",
-                "displayFormats": {
-                    "day": "DD-MM-YYYY"
-                }
-                }
-            }]
-            }
-        }
-        }
-    
-    async with aiohttp.ClientSession() as session:
-        async with session.get("https://quickchart.io/chart", params={"c": json.dumps(request_params)}) as response:
-            content = await response.read()
-            img_bytes = io.BytesIO(content)
-            img_bytes.seek(0)
-            return img_bytes
             
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Starts the conversation and explain how to search games."""
@@ -302,7 +222,7 @@ async def error_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     """Sends error message when user respond with message or command
     that cannot be handled."""
     await update.message.reply_text('Йой, мені не вдалося зрозуміти, що це. '\
-                                    'Спробуйте написати іншу назву гри або скористатися доступними команами:\n\n'\
+                                    'Спробуйте написати іншу назву гри або скористатися доступними командами:\n\n'\
                                     '/start - почати пошук ігор.\n'\
                                     '/report - повідомити про проблему.')
     
@@ -320,9 +240,11 @@ def main() -> None:
         states={
             SEARCH: [MessageHandler(filters.TEXT & ~filters.COMMAND, callback=search),
                      CallbackQueryHandler(button),
-                     CommandHandler('report', report)],
+                     CommandHandler('report', report),
+                     CommandHandler("start", start)],
             REPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, callback=handle_report),
-                     CommandHandler('cancel', cancel)]
+                     CommandHandler('cancel', cancel),
+                     CommandHandler("start", start)]
         },
         fallbacks=[MessageHandler(filters=None, callback=error_message)],
     )
