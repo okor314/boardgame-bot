@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, SmallInteger, Float, Boolean, Text, String, Date, UniqueConstraint, PrimaryKeyConstraint
+from sqlalchemy import Column, Integer, Boolean, Text, String, Date, UniqueConstraint, PrimaryKeyConstraint
 from sqlalchemy.types import TIMESTAMP
 from sqlalchemy.sql.expression import text
 from .database import Base
@@ -6,11 +6,12 @@ from .database import Base
 class Subscription(Base):
     __tablename__ = 'subscription'
 
+    subscription_id = Column(Integer, primary_key=True)
     user_id = Column(Integer, nullable=False)
     game_id = Column(Integer, nullable=False)
     lastminprice = Column(Integer)
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
-    __table_args__ = (PrimaryKeyConstraint(user_id, game_id),)
+    __table_args__ = (UniqueConstraint(user_id, game_id),)
 
 class Game(Base):
     __tablename__ = 'game'

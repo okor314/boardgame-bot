@@ -5,7 +5,7 @@ from api import models
 from api.database import engine, get_db
 
 
-router = APIRouter()
+router = APIRouter(tags=["Prices"])
 
 @router.get("/prices/{id}")
 def get_prices(id: int, db: Session = Depends(get_db)):
