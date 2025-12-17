@@ -27,10 +27,16 @@ def get_subs(user_id: int, db: Session = Depends(get_db)):
 
 @router.post('/subscriptions', status_code=status.HTTP_201_CREATED, response_model=schemas.Subscription)
 def create_sub(subscription: schemas.SubscriptionCreate, db: Session = Depends(get_db)):
+    # Check if user exists
+    user_id = db.execute(select(models.User.id).where(models.User.telegram_user_id == subscription.telegram_user_id)).first()
+    if not user_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, 'Не вдалося знайти користувача')
+    user_id = user_id[0]
+
     # Check if subscription already exists
     exists = db.execute(
         select(models.Subscription.user_id)
-        .where(models.Subscription.user_id == subscription.user_id) 
+        .where(models.Subscription.user_id == user_id) 
         .where(models.Subscription.game_id == subscription.game_id)
               ).first()
     if exists:
@@ -59,7 +65,7 @@ def create_sub(subscription: schemas.SubscriptionCreate, db: Session = Depends(g
             prices[site['name']] = table_game['price']
 
     # Add subcription to dataabse
-    new_sub = models.Subscription(user_id=subscription.user_id, game_id=subscription.game_id, lastminprice = min(prices.values()))
+    new_sub = models.Subscription(user_id=user_id, game_id=subscription.game_id, lastminprice = min(prices.values()))
     db.add(new_sub)
     db.commit()
     db.refresh(new_sub)

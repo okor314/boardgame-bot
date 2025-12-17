@@ -9,7 +9,7 @@ class Subscription(BaseModel):
     created_at: datetime
 
 class SubscriptionCreate(BaseModel):
-    user_id: int
+    telegram_user_id: int
     game_id: int
 
     class Config:
