@@ -3,6 +3,13 @@ from sqlalchemy.types import TIMESTAMP
 from sqlalchemy.sql.expression import text
 from .database import Base
 
+class User(Base):
+    __tablename__ = 'bot_user'
+
+    id = Column(Integer, primary_key=True)
+    telegram_user_id = Column(Integer, nullable=False, unique=True)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=text('now()'))
+
 class Subscription(Base):
     __tablename__ = 'subscription'
 

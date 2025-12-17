@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from api import models
-from api.routers import price, subscription
+from api.routers import price, subscription, user
 from api.database import engine, get_db
 
 app = FastAPI()
@@ -38,3 +38,4 @@ def get_title(id: int, db: Session = Depends(get_db)):
 
 app.include_router(price.router)
 app.include_router(subscription.router)
+app.include_router(user.router)

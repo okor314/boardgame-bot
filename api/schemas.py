@@ -23,3 +23,14 @@ class SubsriptionOut(BaseModel):
 class Subscriptions(BaseModel):
     user_id: int
     subscriptions: List[SubsriptionOut]
+
+class UserCreate(BaseModel):
+    telegram_user_id: int
+
+class User(BaseModel):
+    id: int
+    telegram_user_id: int
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
