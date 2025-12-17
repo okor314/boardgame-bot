@@ -4,13 +4,14 @@ from sqlalchemy import select, MetaData, Table
 from api import models
 from api import schemas
 from api.database import engine, get_db
+from api import utils
 
 
 
 router = APIRouter(tags=["Subscriptions"])
 
 
-@router.get('/subscriptions/user/{user_id}', response_model=schemas.Subscriptions)
+@router.get('/subscriptions/user/{user_id}', response_model=schemas.Subscriptions, dependencies=[Depends(utils.require_key)])
 def get_subs(user_id: int, db: Session = Depends(get_db)):
     stmt = (
         select(models.Subscription.subscription_id, models.Subscription.game_id, models.Game.title)
@@ -25,7 +26,7 @@ def get_subs(user_id: int, db: Session = Depends(get_db)):
 
     return {'user_id': user_id, 'subscriptions': subs}
 
-@router.post('/subscriptions', status_code=status.HTTP_201_CREATED, response_model=schemas.Subscription)
+@router.post('/subscriptions', status_code=status.HTTP_201_CREATED, response_model=schemas.Subscription, dependencies=[Depends(utils.require_key)])
 def create_sub(subscription: schemas.SubscriptionCreate, db: Session = Depends(get_db)):
     # Check if user exists
     user_id = db.execute(select(models.User.id).where(models.User.telegram_user_id == subscription.telegram_user_id)).first()
@@ -73,7 +74,7 @@ def create_sub(subscription: schemas.SubscriptionCreate, db: Session = Depends(g
 
     return new_sub
 
-@router.delete('/subscriptions/{id}', status_code=status.HTTP_204_NO_CONTENT)
+@router.delete('/subscriptions/{id}', status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(utils.require_key)])
 def delete_sub(id: int, db: Session = Depends(get_db)):
     sub = db.query(models.Subscription).filter(models.Subscription.subscription_id == id)
     
