@@ -29,7 +29,7 @@ from telegram.ext import (
 
 from utils import match_buttons, find_matches, message_with_details, prices_plot
 
-load_dotenv(dotenv_path='./.env')
+load_dotenv(dotenv_path='./test.env')
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID"))
 API_BASE_URL = 'http://127.0.0.1:8000'
@@ -66,6 +66,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Starts the conversation and explain how to search games."""
     global TITLES 
     TITLES = await getAllTitles()
+    print(update.effective_user.id, update.effective_chat.id)
 
     commands_keyboard = [['/start', '/report']]
     reply_markup = ReplyKeyboardMarkup(commands_keyboard, one_time_keyboard=True, resize_keyboard=True)
