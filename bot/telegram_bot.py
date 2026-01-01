@@ -27,25 +27,21 @@ from telegram.ext import (
     filters,
 )
 
-from utils import match_buttons, find_matches, message_with_details, prices_plot
+from utils import apiRequest
+import utils
 
 load_dotenv(dotenv_path='./test.env')
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID"))
-API_BASE_URL = 'http://127.0.0.1:8000'
+API_KEY = os.getenv('BOT_API_KEY')
 
 SEARCH, REPORT = range(2)
 TITLES = []
 
 
-async def apiGET(endpoint: str) -> dict:
-    url = API_BASE_URL + endpoint
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            return await response.json(encoding='utf-8')
 
 async def getAllTitles():
-    response = await apiGET('/titles')
+    response = await apiRequest('GET', '/titles')
     titles = [(game.get('id'), game.get('title')) for game in response]
     return titles
 
@@ -66,7 +62,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Starts the conversation and explain how to search games."""
     global TITLES 
     TITLES = await getAllTitles()
-    print(update.effective_user.id, update.effective_chat.id)
+
+    # Adding new user to db if not exists
+    await apiRequest('POST', '/users',
+                     json = {'telegram_user_id': update.effective_user.id},
+                     headers = {'X-API-Key': API_KEY})
 
     commands_keyboard = [['/start', '/report']]
     reply_markup = ReplyKeyboardMarkup(commands_keyboard, one_time_keyboard=True, resize_keyboard=True)
@@ -81,11 +81,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int: 
     """Search games similar to users query."""
     query = update.message.text
-    matches = find_matches(query, TITLES)
+    matches = utils.find_matches(query, TITLES)
  
     if not matches:
         matches = [choice[0] for choice in process.extractBests(query, TITLES)]
-        keyboard = match_buttons(matches)
+        keyboard = utils.match_buttons(matches)
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text('Нічого не знайдено T_T\n' \
         'Можливо ви мали на увазі:', reply_markup=reply_markup)
@@ -94,16 +94,16 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # If the first name is identical to the query, return the game data right away.
     if matches[0][1] == query:
         game_id = matches[0][0]
-        game_detailes = await apiGET(f'/prices/{game_id}')
+        game_detailes = await apiRequest('GET', f'/prices/{game_id}')
 
-        message = message_with_details(game_detailes)
-        history_button = [[InlineKeyboardButton("Подивитись історію цін", callback_data=f"show_history:{game_id}")]]
+        message = utils.message_with_details(game_detailes)
+        history_button = [[InlineKeyboardButton("Історія цін", callback_data=f"show_history:{game_id}")]]
         reply_markup = InlineKeyboardMarkup(history_button)
         await update.message.reply_text(message, parse_mode='HTML', disable_web_page_preview=True, reply_markup=reply_markup)
 
         return SEARCH
     
-    full_keyboard = match_buttons(matches)
+    full_keyboard = utils.match_buttons(matches)
     # if there a too many matches show olny three first
     if len(full_keyboard) > 3:
         short_keyboard = full_keyboard[:3]
@@ -125,22 +125,22 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith('show_more:'):
         search_query = data.split(':')[1]
-        matches = find_matches(search_query, TITLES)
-        full_keyboard = match_buttons(matches)
+        matches = utils.find_matches(search_query, TITLES)
+        full_keyboard = utils.match_buttons(matches)
         reply_markup = InlineKeyboardMarkup(full_keyboard)
         await query.edit_message_text('Оберіть гру:', reply_markup=reply_markup)
         return
     elif data.startswith('show_history:'):
         game_id = int(data.split(':')[1])
-        history = await apiGET(f'/history/{game_id}')
-        photo = await prices_plot(history)
+        history = await apiRequest('GET', f'/prices/{game_id}/history')
+        photo = await utils.prices_plot(history)
         await query.message.reply_photo(photo)
         return
     
     game_id = int(data)
-    game_detailes = await apiGET(f'/prices/{game_id}')
+    game_detailes = await apiRequest('GET', f'/prices/{game_id}')
 
-    message = message_with_details(game_detailes)
+    message = utils.message_with_details(game_detailes)
     history_button = [[InlineKeyboardButton("Подивитись історію цін", callback_data=f"show_history:{game_id}")]]
     reply_markup = InlineKeyboardMarkup(history_button)
     await query.message.reply_text(message, parse_mode='HTML', disable_web_page_preview=True, reply_markup=reply_markup)
@@ -177,7 +177,7 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         TITLES = await getAllTitles()
         return
     
-    matches = find_matches(query, TITLES)
+    matches = utils.find_matches(query, TITLES)
     if not matches:
         matches = [choice[0] for choice in process.extractBests(query, TITLES)]
     # Limit 50 results per query
@@ -213,9 +213,9 @@ async def detail_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     if data.startswith('detail_data:'):
         game_id = int(data.split(':')[1])
-        game_detailes = await apiGET(f'/prices/{game_id}')
+        game_detailes = await apiRequest('GET', f'/prices/{game_id}')
 
-        message = message_with_details(game_detailes)
+        message = utils.message_with_details(game_detailes)
         await query.edit_message_text(message, parse_mode='HTML', disable_web_page_preview=True)
 
 

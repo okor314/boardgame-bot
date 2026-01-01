@@ -6,6 +6,13 @@ import io
 import json
 
 NUMBER_EMOJI = [f'{i}\uFE0F\u20E3' for i in range(11)]
+API_BASE_URL = 'http://127.0.0.1:8000'
+
+async def apiRequest(method: str, endpoint: str, **kwargs) -> dict:
+    url = API_BASE_URL + endpoint
+    async with aiohttp.ClientSession() as session:
+        async with session.request(method, url, **kwargs) as response:
+            return await response.json(encoding='utf-8')
 
 def match_buttons(matches: list[tuple[int, str]]) -> list:
     """Helper to create buttons with all matched games."""
@@ -24,7 +31,8 @@ def find_matches(query: str, choises: list[tuple[int, str]]) -> list[tuple[int, 
 def message_with_details(details: dict) -> str:
     """Helper function to create a massage about game details on each site."""
     meassage = ''
-    sites = sorted(details.items(), key=lambda game: game[1].get('price'))
+    sites = sorted(details.items(), 
+                   key=lambda game: price if (price := game[1].get('price')) else 10**5 )
     for i, site in enumerate(sites, start=1):
         site_name = site[0]
         game_info = site[1]
@@ -34,8 +42,8 @@ def message_with_details(details: dict) -> str:
         name_tag = 'b' if game_info['in_stock'] else 's'
         meassage += (
             f'{NUMBER_EMOJI[i]} <{name_tag}>{site_name}</{name_tag}>\n'
-            f'Ціна: <u>{int(game_info['price'])} грн.</u>\n'
-            f'Статус: {['Немає в наявності', 'В наявності'][game_info['in_stock']]}\n'
+            f'Ціна: <u>{getPriceText(game_info)}</u>\n'
+            f'Статус: {isAvailableText(game_info)}\n'
             f'Назва: <a href=\"{game_info['url']}\">{game_info['title']}</a>\n'
             f'Остання перевірка: {day}.{month}\n\n'
         )
@@ -88,3 +96,15 @@ async def prices_plot(history_details: dict):
             img_bytes = io.BytesIO(content)
             img_bytes.seek(0)
             return img_bytes
+        
+def isAvailableText(game_info: dict) -> str:
+    if game_info.get('price') and game_info.get('in_stock'):
+        return 'В наявності'
+    else:
+        return 'Немає в наявності'
+    
+def getPriceText(game_info: dict) -> str:
+    if game_info.get('price'):
+        return str(int(game_info['price'])) + ' грн.'
+    else:
+        return 'Відсутня'
