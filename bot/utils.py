@@ -1,5 +1,5 @@
 import aiohttp
-from telegram import InlineKeyboardButton
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from thefuzz import fuzz, process
 
 import io
@@ -17,6 +17,27 @@ async def apiRequest(method: str, endpoint: str, **kwargs) -> dict:
 def match_buttons(matches: list[tuple[int, str]]) -> list:
     """Helper to create buttons with all matched games."""
     return [[InlineKeyboardButton(title, callback_data=str(id))] for id, title in matches]
+
+def subs_buttons(games: list[dict]):
+    """Helper function to create buttons of games user subscribed to."""
+    buttons = [InlineKeyboardButton(game['title'], callback_data=str(game['game_id'])) for game in games]
+    num_rows = (len(buttons) + 1) // 2
+    keyboard = [buttons[2*i:2*(i+1)] for i in range(num_rows)]
+    return InlineKeyboardMarkup(keyboard)
+
+def original_keyboard(game_id: int, subscribed: bool):
+    """Helper function to create buttons for message 
+    with game detail information."""
+    history_button = InlineKeyboardButton("Історія цін", callback_data=f"show_history:{game_id}")
+    sub_button = (InlineKeyboardButton("Ви стежите ✅", callback_data=f"cancel_sub:{game_id}") if subscribed 
+                    else InlineKeyboardButton("Стежити за грою", callback_data=f"create_sub:{game_id}"))
+    return InlineKeyboardMarkup([[history_button, sub_button]])
+
+def confirm_keyboard(game_id):
+    """Helper function to create buttons to unsubscribe from game."""
+    goback_button = InlineKeyboardButton("⬅️ Назад", callback_data=f"goback:{game_id}")
+    delsub_button = InlineKeyboardButton("Відписатися ❌", callback_data=f"delete_sub:{game_id}")
+    return InlineKeyboardMarkup([[goback_button, delsub_button]])
 
 def find_matches(query: str, choises: list[tuple[int, str]]) -> list[tuple[int, str]]:
     """Helper function to find games with title that contains
@@ -51,6 +72,27 @@ def message_with_details(details: dict) -> str:
     meassage += ('Якщо ви помітили якусь помилку або неточність, '
                 'можете повідомити про неї за допомогою команди /report')
     return meassage
+
+async def get_reply_params(update: Update, game_id: int, 
+                           include_buttons: bool = True, subscribed: bool= None) -> dict:
+    game_detailes = await apiRequest('GET', f'/prices/{game_id}')
+    buttons = None
+    
+    if include_buttons:
+        if subscribed is None:
+            sub_status = await apiRequest('GET', f'/subscriptions/status',
+                                          params = {'telegram_user_id': update.effective_user.id, 'game_id': game_id})
+            subscribed = sub_status.get('status')
+
+        buttons = original_keyboard(game_id, subscribed)
+
+    return {
+        'text':      message_with_details(game_detailes),
+        'reply_markup': buttons,
+        'parse_mode':   'HTML',
+        'disable_web_page_preview': True,
+    }
+
 
 async def prices_plot(history_details: dict):
     """Helper function to create   """

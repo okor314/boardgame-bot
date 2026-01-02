@@ -68,7 +68,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                      json = {'telegram_user_id': update.effective_user.id},
                      headers = {'X-API-Key': API_KEY})
 
-    commands_keyboard = [['/start', '/report']]
+    commands_keyboard = [['/start', '/report'],
+                         ['/subscriptions']]
     reply_markup = ReplyKeyboardMarkup(commands_keyboard, one_time_keyboard=True, resize_keyboard=True)
     
     await update.message.reply_text(
@@ -94,12 +95,8 @@ async def search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # If the first name is identical to the query, return the game data right away.
     if matches[0][1] == query:
         game_id = matches[0][0]
-        game_detailes = await apiRequest('GET', f'/prices/{game_id}')
-
-        message = utils.message_with_details(game_detailes)
-        history_button = [[InlineKeyboardButton("Історія цін", callback_data=f"show_history:{game_id}")]]
-        reply_markup = InlineKeyboardMarkup(history_button)
-        await update.message.reply_text(message, parse_mode='HTML', disable_web_page_preview=True, reply_markup=reply_markup)
+        msg_params = await utils.get_reply_params(update, game_id)
+        await update.message.reply_text(**msg_params)
 
         return SEARCH
     
@@ -136,14 +133,33 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo = await utils.prices_plot(history)
         await query.message.reply_photo(photo)
         return
+    elif data.startswith('create_sub:'):
+        game_id = int(data.split(':')[1])
+        resp = await apiRequest('POST', '/subscriptions',
+                                json = {'telegram_user_id': update.effective_user.id, 'game_id': game_id},
+                                headers = {'X-API-Key': API_KEY})
+        if resp.get('subscription_id'):
+            await query.edit_message_reply_markup(utils.original_keyboard(game_id, subscribed=True))
+        return
+    elif data.startswith('cancel_sub:'):
+        game_id = int(data.split(':')[1])
+        await query.edit_message_reply_markup(utils.confirm_keyboard(game_id))
+        return
+    elif data.startswith('delete_sub:'):
+        game_id = int(data.split(':')[1])
+        await apiRequest('DELETE', '/subscriptions',
+                         json = {'telegram_user_id': update.effective_user.id, 'game_id': game_id},
+                         headers = {'X-API-Key': API_KEY})
+        await query.edit_message_reply_markup(utils.original_keyboard(game_id, subscribed=False))
+        return
+    elif data.startswith('goback:'):
+        game_id = int(data.split(':')[1])
+        await query.edit_message_reply_markup(utils.original_keyboard(game_id, subscribed=True))
+        return
     
     game_id = int(data)
-    game_detailes = await apiRequest('GET', f'/prices/{game_id}')
-
-    message = utils.message_with_details(game_detailes)
-    history_button = [[InlineKeyboardButton("Подивитись історію цін", callback_data=f"show_history:{game_id}")]]
-    reply_markup = InlineKeyboardMarkup(history_button)
-    await query.message.reply_text(message, parse_mode='HTML', disable_web_page_preview=True, reply_markup=reply_markup)
+    msg_params = await utils.get_reply_params(update, game_id)
+    await query.message.reply_text(**msg_params)
 
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text('Опишіть, будь ласка, проблему. Якщо помітили якусь неточність, '
@@ -213,10 +229,8 @@ async def detail_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     if data.startswith('detail_data:'):
         game_id = int(data.split(':')[1])
-        game_detailes = await apiRequest('GET', f'/prices/{game_id}')
-
-        message = utils.message_with_details(game_detailes)
-        await query.edit_message_text(message, parse_mode='HTML', disable_web_page_preview=True)
+        msg_params = await utils.get_reply_params(update, game_id, include_buttons=False)
+        await query.edit_message_text(**msg_params)
 
 
 async def error_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -226,6 +240,23 @@ async def error_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                                     'Спробуйте написати іншу назву гри або скористатися доступними командами:\n\n'\
                                     '/start - почати пошук ігор.\n'\
                                     '/report - повідомити про проблему.')
+    
+async def my_subs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    "Send user list of games they have subscribed to."
+    resp = await apiRequest('GET', f'/subscriptions/by-telegram/{update.effective_user.id}',
+                      headers = {'X-API-Key': API_KEY})
+    subs = resp.get('subscriptions')
+    if subs:
+        last_sentence = 'Список ігор, за якими ви стежите:'
+    else:
+        last_sentence = 'Наразі ви не стежите за жодною грою.'
+    text = (
+        'У разі зменшення ціни на гру, за якою ви стежите, '\
+        'вам прийде відповідне сповіщення.\n\n'\
+        + last_sentence
+    )
+
+    await update.message.reply_text(text, reply_markup=utils.subs_buttons(subs))
     
     
 
@@ -241,18 +272,16 @@ def main() -> None:
         states={
             SEARCH: [MessageHandler(filters.TEXT & ~filters.COMMAND, callback=search),
                      CallbackQueryHandler(button),
-                     CommandHandler('report', report),
-                     CommandHandler("start", start)],
+                     CommandHandler('report', report)],
             REPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, callback=handle_report),
-                     CommandHandler('cancel', cancel),
-                     CommandHandler("start", start)]
+                     CommandHandler('cancel', cancel)]
         },
-        fallbacks=[MessageHandler(filters=None, callback=error_message)],
+        fallbacks=[CommandHandler("start", start),
+                   CommandHandler("subscriptions", my_subs),
+                   MessageHandler(filters=None, callback=error_message)],
     )
 
     application.add_handler(conv_handler)
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("report", report))
     application.add_handler(InlineQueryHandler(inline_query))
     application.add_handler(CallbackQueryHandler(detail_button))
 
