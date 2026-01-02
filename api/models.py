@@ -28,6 +28,7 @@ class Game(Base):
     gameland_id = Column(Integer)
     geekach_id = Column(Integer)
     woodcat_id = Column(Integer)
+    ihromag_id = Column(Integer)
 
 class Site(Base):
     __tablename__ = 'site'

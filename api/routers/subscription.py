@@ -14,17 +14,35 @@ router = APIRouter(tags=["Subscriptions"])
 @router.get('/subscriptions/user/{user_id}', response_model=schemas.Subscriptions, dependencies=[Depends(utils.require_key)])
 def get_subs(user_id: int, db: Session = Depends(get_db)):
     stmt = (
-        select(models.Subscription.subscription_id, models.Subscription.game_id, models.Game.title)
+        select(models.Subscription.game_id, models.Game.title, models.Subscription.created_at)
         .select_from(models.Subscription)
         .join(models.Game, models.Subscription.game_id == models.Game.id)
         .where(models.Subscription.user_id == user_id)
     )
 
     subs = db.execute(stmt).mappings().all()
-    if not subs:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Не вдалося знайти користувача")
 
     return {'user_id': user_id, 'subscriptions': subs}
+
+@router.get("/subscriptions/by-telegram/{telegram_user_id}",
+            response_model=schemas.Subscriptions, dependencies=[Depends(utils.require_key)])
+def get_subs(telegram_user_id: int, db: Session = Depends(get_db)):
+
+    user = db.query(models.User).filter(models.User.telegram_user_id == telegram_user_id).first()
+    if not user:
+        return {"user_id": None, "subscriptions": []}
+    
+    stmt = (
+        select(models.Subscription.game_id, models.Game.title, models.Subscription.created_at)
+        .select_from(models.Subscription)
+        .join(models.Game, models.Subscription.game_id == models.Game.id)
+        .where(models.Subscription.user_id == user.id)
+        .order_by(models.Subscription.created_at.desc())
+    )
+
+    subs = db.execute(stmt).mappings().all()
+
+    return {'user_id': user.id, 'subscriptions': subs}
 
 @router.post('/subscriptions', status_code=status.HTTP_201_CREATED, response_model=schemas.Subscription, dependencies=[Depends(utils.require_key)])
 def create_sub(subscription: schemas.SubscriptionCreate, db: Session = Depends(get_db)):
@@ -85,4 +103,36 @@ def delete_sub(id: int, db: Session = Depends(get_db)):
     db.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+@router.delete('/subscriptions', status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(utils.require_key)])
+def delete_sub(payload: schemas.SubscriptionDelete, db: Session = Depends(get_db)):
+    sub = (db.query(models.Subscription)
+           .select_from(models.Subscription)
+           .join(models.User, models.Subscription.user_id == models.User.id)
+           .filter(models.User.telegram_user_id == payload.telegram_user_id,
+                   models.Subscription.game_id == payload.game_id)
+            .first())
+
+    if not sub:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Не вдалося знайти підписку")
+
+    db.delete(sub)
+    db.commit()
+
+    return {'status_code': 204}
+
+@router.get('/subscriptions/status')
+def isSubscribed(telegram_user_id: int, game_id: int, db: Session = Depends(get_db)):
+    user_id = db.execute(
+        select(models.User.id)
+        .where(models.User.telegram_user_id == telegram_user_id)).first()
+    if not user_id:
+        return {"status": False}
+
+    sub = db.execute(
+        select(models.Subscription.subscription_id)
+        .where((models.Subscription.user_id == user_id[0]) & 
+               (models.Subscription.game_id == game_id))
+               ).first()
     
+    return {"status": bool(sub)}
