@@ -66,6 +66,11 @@ def create_sub(subscription: schemas.SubscriptionCreate, db: Session = Depends(g
     if not game:
         raise HTTPException(status.HTTP_404_NOT_FOUND, 'Не вдалося знайти гру')
     
+    # Limit number of subscriptions per user
+    subs = db.query(models.Subscription).filter(models.Subscription.user_id == user_id).all()
+    if len(subs) == 10:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, 
+                            'Forbidden: reached limit of subscriptions per user')
     # Extract min price
     sites = db.execute(select(models.Site.name)).mappings().all()
     prices = {}

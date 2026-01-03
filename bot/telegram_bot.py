@@ -140,6 +140,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 headers = {'X-API-Key': API_KEY})
         if resp.get('subscription_id'):
             await query.edit_message_reply_markup(utils.original_keyboard(game_id, subscribed=True))
+        elif detail:= resp.get('detail'):
+            if detail == "Forbidden: reached limit of subscriptions per user":
+                await query.message.reply_text(('Ви досягли максимальної кількості ігор, '\
+                                                 'за якими можна стежити.'))
         return
     elif data.startswith('cancel_sub:'):
         game_id = int(data.split(':')[1])
@@ -162,6 +166,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.reply_text(**msg_params)
 
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    global TITLES
+    if not TITLES: 
+        TITLES = await getAllTitles()
+
     await update.message.reply_text('Опишіть, будь ласка, проблему. Якщо помітили якусь неточність, '
                                     'вкажіть гру, якої вона стосується, або ваш пошуковий запит.\n\n'
                                     'Щоб просто повернутися до пошуку ігор, скористайтеся командою /cancel')
@@ -243,6 +251,10 @@ async def error_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     
 async def my_subs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     "Send user list of games they have subscribed to."
+    global TITLES 
+    if not TITLES:
+        TITLES = await getAllTitles()
+        
     resp = await apiRequest('GET', f'/subscriptions/by-telegram/{update.effective_user.id}',
                       headers = {'X-API-Key': API_KEY})
     subs = resp.get('subscriptions')
@@ -257,6 +269,7 @@ async def my_subs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     await update.message.reply_text(text, reply_markup=utils.subs_buttons(subs))
+    return SEARCH
     
     
 
@@ -268,7 +281,8 @@ def main() -> None:
     application = Application.builder().token(BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start), CommandHandler("report", report)],
+        entry_points=[CommandHandler("start", start), CommandHandler("report", report),
+                      CommandHandler("subscriptions", my_subs)],
         states={
             SEARCH: [MessageHandler(filters.TEXT & ~filters.COMMAND, callback=search),
                      CallbackQueryHandler(button),
