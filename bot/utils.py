@@ -1,6 +1,7 @@
 import aiohttp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from thefuzz import fuzz, process
+from datetime import datetime
 
 import io
 import json
@@ -93,13 +94,41 @@ async def get_reply_params(update: Update, game_id: int,
         'disable_web_page_preview': True,
     }
 
+def increment_month(date: datetime):
+    if date.month == 12:
+        return datetime(date.year+1, 1, 1).date()
+    return datetime(date.year, date.month+1, 1).date()
+
+def date_range(history_details: dict):
+    dates = set(datetime.strptime(date, "%Y-%m-%d").date()
+                for history in history_details.values() 
+                for date in history.keys()
+                )
+    min_date = min(dates)
+    max_date = increment_month(max(dates))
+
+    return {
+        "min": f"{min_date.year}-{min_date.month}-01",
+        "max": f"{max_date.year}-{max_date.month}-01",
+    }
+    
 
 async def prices_plot(history_details: dict):
     """Helper function to create   """
+    colors = {
+        'gameland': 'red',
+        'geekach': 'blue',
+        'woodcat': 'orange',
+        'ihromag': 'green',
+        'lordofboards': 'purple'
+    }
+
     datasets = [
         {
             "label": site_name,
             "fill": False,
+            "borderColor": colors.get(site_name),
+            "backgroundColor": colors.get(site_name),
             "data": [{"x": date, "y": price} for date, price in data.items()]
         }
         for site_name, data in history_details.items()
@@ -118,14 +147,10 @@ async def prices_plot(history_details: dict):
             "scales": {
             "xAxes": [{
                 "type": "time",
-                "ticks": {
-                    "source": "data"
-                },
+                "ticks": date_range(history_details),
                 "time": {
                 "parser": "YYYY-MM-DD",
-                "displayFormats": {
-                    "day": "DD-MM-YYYY"
-                }
+                "unit": "month"
                 }
             }]
             }
