@@ -1,9 +1,9 @@
 from dotenv import load_dotenv
 import os
 
-load_dotenv(dotenv_path='.env')
+load_dotenv(dotenv_path='test.env')
 
-def config():
+def config(return_url=False):
     db = {
         'host': os.getenv('DATABASE_HOST'),
         'port': os.getenv('DATABASE_PORT'),
@@ -11,5 +11,8 @@ def config():
         'user': os.getenv('DATABASE_USER'),
         'password': os.getenv('DATABASE_PASSWORD'),
     }
+
+    if return_url:
+        db = f'postgresql://{db['user']}:{db['password']}@{db["host"]}:{db["port"]}/{db["database"]}'
 
     return db

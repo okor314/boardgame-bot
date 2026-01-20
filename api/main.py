@@ -1,100 +1,41 @@
-from fastapi import FastAPI, HTTPException, status
-import psycopg2
-from psycopg2.extras import RealDictCursor
-from api.config import config
+from fastapi import FastAPI, HTTPException, status, Depends
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+
+from api import models
+from api.routers import price, subscription, user
+from api.database import engine, get_db
 
 app = FastAPI()
 
-def get_db():
-    params = config()
-    conn = psycopg2.connect(**params, cursor_factory=RealDictCursor)
-    return conn
-
 @app.get("/titles")
-def get_titles():
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT id, title FROM game ORDER BY id;")
-        rows = cur.fetchall()
-        return rows
-    finally:
-        conn.close()
+def get_titles(db: Session = Depends(get_db)):
+    stmt = (
+        select(models.Game.id, models.Game.title)
+        .order_by(models.Game.id)
+    )
+
+    rows = db.execute(stmt).mappings().all()
+    return rows
 
 @app.get("/titles/{id}")
-def get_title(id: int):
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT id, title FROM game WHERE id = %s;", (id,))
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Не вдалося знайти гру")
-        return row
-    finally:
-        conn.close()
+def get_title(id: int, db: Session = Depends(get_db)):
+    stmt = (
+        select(models.Game.id, models.Game.title)
+        .where(models.Game.id == id)
+    )
 
-@app.get("/prices/{id}")
-def get_prices(id: int):
-    try:
-        conn = get_db()
-        cur = conn.cursor()
+    row = db.execute(stmt).mappings().first()
 
-        cur.execute("SELECT name FROM site")
-        site_names = [row['name'] for row in cur.fetchall()]
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Не вдалося знайти гру"
+        )
 
-        columns = ', '.join([f'{name}_id' for name in site_names])
-        cur.execute(f"SELECT {columns} FROM game WHERE id = %s", (id,))
-        ids = cur.fetchone()
+    return row
 
-        if not ids:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Не вдалося знайти гру")
 
-        result = {}
-        for site, site_id in zip(site_names, ids.values()):
-            if site_id is None:
-                continue
-
-            cur.execute(f"""SELECT id, title, price, in_stock, url, lastchecked
-                        FROM {site} 
-                        WHERE id = %s""", (site_id,))
-
-            shop = cur.fetchone()
-            if shop:
-                result[site] = shop
-
-        return result
-
-    finally:
-        conn.close()
-
-@app.get('/history/{id}')
-def get_history(id: int):
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("""SELECT site.name, history.price, history.checkdate 
-                        FROM history
-                        JOIN site
-                        ON history.site_id = site.id
-                        WHERE history.game_id = %s
-                        ORDER BY history.checkdate;""", (id,))
-        
-        rows = cur.fetchall()
-        if not rows:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Не вдалося знайти гру")
-        
-        result = {}
-        for row in rows:
-            site_name = row['name']
-            price = row['price']
-            date = row['checkdate']
-
-            if result.get(site_name) is None:
-                result[site_name] = {date: price}
-            else:
-                result[site_name].update({date: price})
-                
-        return result
-    finally:
-        conn.close()
+app.include_router(price.router)
+app.include_router(subscription.router)
+app.include_router(user.router)

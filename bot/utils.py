@@ -1,0 +1,177 @@
+import aiohttp
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from thefuzz import fuzz, process
+from datetime import datetime
+
+import io
+import json
+
+NUMBER_EMOJI = [f'{i}\uFE0F\u20E3' for i in range(11)]
+API_BASE_URL = 'http://127.0.0.1:8000'
+
+async def apiRequest(method: str, endpoint: str, **kwargs) -> dict:
+    url = API_BASE_URL + endpoint
+    async with aiohttp.ClientSession() as session:
+        async with session.request(method, url, **kwargs) as response:
+            return await response.json(encoding='utf-8')
+
+def match_buttons(matches: list[tuple[int, str]]) -> list:
+    """Helper to create buttons with all matched games."""
+    return [[InlineKeyboardButton(title, callback_data=str(id))] for id, title in matches]
+
+def subs_buttons(games: list[dict]):
+    """Helper function to create buttons of games user subscribed to."""
+    buttons = [InlineKeyboardButton(game['title'], callback_data=str(game['game_id'])) for game in games]
+    num_rows = (len(buttons) + 1) // 2
+    keyboard = [buttons[2*i:2*(i+1)] for i in range(num_rows)]
+    return InlineKeyboardMarkup(keyboard)
+
+def original_keyboard(game_id: int, subscribed: bool):
+    """Helper function to create buttons for message 
+    with game detail information."""
+    history_button = InlineKeyboardButton("Історія цін", callback_data=f"show_history:{game_id}")
+    sub_button = (InlineKeyboardButton("Ви стежите ✅", callback_data=f"cancel_sub:{game_id}") if subscribed 
+                    else InlineKeyboardButton("Стежити за грою", callback_data=f"create_sub:{game_id}"))
+    return InlineKeyboardMarkup([[history_button, sub_button]])
+
+def confirm_keyboard(game_id):
+    """Helper function to create buttons to unsubscribe from game."""
+    goback_button = InlineKeyboardButton("⬅️ Назад", callback_data=f"goback:{game_id}")
+    delsub_button = InlineKeyboardButton("Відписатися ❌", callback_data=f"delete_sub:{game_id}")
+    return InlineKeyboardMarkup([[goback_button, delsub_button]])
+
+def find_matches(query: str, choises: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    """Helper function to find games with title that contains
+    words given in query."""
+    words = query.lower().strip().split(' ')
+
+    matches = filter(lambda x: any(word in x[1].lower() for word in words if x[1]), choises)
+    # Sorting by fuzz score of pair query-title
+    matches = sorted(matches, key=lambda x: fuzz.WRatio(query, x[1]), reverse=True)
+    return matches
+
+def message_with_details(details: dict) -> str:
+    """Helper function to create a massage about game details on each site."""
+    meassage = ''
+    sites = sorted(details.items(), 
+                   key=lambda game: price if (price := game[1].get('price')) else 10**5 )
+    for i, site in enumerate(sites, start=1):
+        site_name = site[0]
+        game_info = site[1]
+        year, month, day = game_info['lastchecked'].split('-')
+
+        # Use bold text for site name if game is in stock and cross out text if it is not
+        name_tag = 'b' if game_info['in_stock'] else 's'
+        meassage += (
+            f'{NUMBER_EMOJI[i]} <{name_tag}>{site_name}</{name_tag}>\n'
+            f'Ціна: <u>{getPriceText(game_info)}</u>\n'
+            f'Статус: {isAvailableText(game_info)}\n'
+            f'Назва: <a href=\"{game_info['url']}\">{game_info['title']}</a>\n'
+            f'Остання перевірка: {day}.{month}\n\n'
+        )
+
+    meassage += ('Якщо ви помітили якусь помилку або неточність, '
+                'можете повідомити про неї за допомогою команди /report')
+    return meassage
+
+async def get_reply_params(update: Update, game_id: int, 
+                           include_buttons: bool = True, subscribed: bool= None) -> dict:
+    game_detailes = await apiRequest('GET', f'/prices/{game_id}')
+    buttons = None
+    
+    if include_buttons:
+        if subscribed is None:
+            sub_status = await apiRequest('GET', f'/subscriptions/status',
+                                          params = {'telegram_user_id': update.effective_user.id, 'game_id': game_id})
+            subscribed = sub_status.get('status')
+
+        buttons = original_keyboard(game_id, subscribed)
+
+    return {
+        'text':      message_with_details(game_detailes),
+        'reply_markup': buttons,
+        'parse_mode':   'HTML',
+        'disable_web_page_preview': True,
+    }
+
+def increment_month(date: datetime):
+    if date.month == 12:
+        return datetime(date.year+1, 1, 1).date()
+    return datetime(date.year, date.month+1, 1).date()
+
+def date_range(history_details: dict):
+    dates = set(datetime.strptime(date, "%Y-%m-%d").date()
+                for history in history_details.values() 
+                for date in history.keys()
+                )
+    min_date = min(dates)
+    max_date = increment_month(max(dates))
+
+    return {
+        "min": f"{min_date.year}-{min_date.month}-01",
+        "max": f"{max_date.year}-{max_date.month}-01",
+    }
+    
+
+async def prices_plot(history_details: dict):
+    """Helper function to create   """
+    colors = {
+        'gameland': 'red',
+        'geekach': 'blue',
+        'woodcat': 'orange',
+        'ihromag': 'green',
+        'lordofboards': 'purple'
+    }
+
+    datasets = [
+        {
+            "label": site_name,
+            "fill": False,
+            "borderColor": colors.get(site_name),
+            "backgroundColor": colors.get(site_name),
+            "data": [{"x": date, "y": price} for date, price in data.items()]
+        }
+        for site_name, data in history_details.items()
+    ]
+
+    request_params = {
+        "type": "line",
+        "data": {
+            "datasets": datasets
+        },
+        "options": {
+            "title": {
+                "display": True,
+                "text": "Історія цін"
+            },
+            "scales": {
+            "xAxes": [{
+                "type": "time",
+                "ticks": date_range(history_details),
+                "time": {
+                "parser": "YYYY-MM-DD",
+                "unit": "month"
+                }
+            }]
+            }
+        }
+        }
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.get("https://quickchart.io/chart", params={"c": json.dumps(request_params)}) as response:
+            content = await response.read()
+            img_bytes = io.BytesIO(content)
+            img_bytes.seek(0)
+            return img_bytes
+        
+def isAvailableText(game_info: dict) -> str:
+    if game_info.get('price') and game_info.get('in_stock'):
+        return 'В наявності'
+    else:
+        return 'Немає в наявності'
+    
+def getPriceText(game_info: dict) -> str:
+    if game_info.get('price'):
+        return str(int(game_info['price'])) + ' грн.'
+    else:
+        return 'Відсутня'
